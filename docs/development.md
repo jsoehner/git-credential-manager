@@ -54,6 +54,12 @@ To build from the command line, run:
 dotnet build -c LinuxDebug
 ```
 
+If you want to build for a specific architecture, you can provide `linux-x64` or `linux-arm64` or `linux-arm` as the runtime:
+
+```shell
+dotnet build -c LinuxDebug -r linux-arm64
+```
+
 You can find a copy of the Debian package (.deb) file in `out/linux/Packaging.Linux/deb/Debug`.
 
 The flat binaries can also be found in `out/linux/Packaging.Linux/payload/Debug`.
@@ -209,13 +215,13 @@ HTML reports can be generated using ReportGenerator, this should be installed
 during the build process, from the command line:
 
 ```shell
-dotnet ~/.nuget/packages/reportgenerator/*/*/net7.0/ReportGenerator.dll -reports:./**/TestResults/**/coverage.cobertura.xml -targetdir:./out/code-coverage
+dotnet ~/.nuget/packages/reportgenerator/*/*/net8.0/ReportGenerator.dll -reports:./**/TestResults/**/coverage.cobertura.xml -targetdir:./out/code-coverage
 ```
 
 or
 
 ```shell
-dotnet {$env:USERPROFILE}/.nuget/packages/reportgenerator/*/*/net7.0/ReportGenerator.dll -reports:./**/TestResults/**/coverage.cobertura.xml -targetdir:./out/code-coverage
+dotnet {$env:USERPROFILE}/.nuget/packages/reportgenerator/*/*/net8.0/ReportGenerator.dll -reports:./**/TestResults/**/coverage.cobertura.xml -targetdir:./out/code-coverage
 ```
 
 Or via VSCode Terminal/Run Task:

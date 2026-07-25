@@ -59,7 +59,7 @@ namespace Microsoft.AzureRepos
                 return false;
             }
 
-            // We do not support unencrypted HTTP communications to Azure Repos,
+            // We do not recommend unencrypted HTTP communications to Azure Repos,
             // but we report `true` here for HTTP so that we can show a helpful
             // error message for the user in `CreateCredentialAsync`.
             return input.TryGetHostAndPort(out string hostName, out _)
@@ -92,8 +92,8 @@ namespace Microsoft.AzureRepos
 
             if (UsePersonalAccessTokens())
             {
-                Uri remoteUri = input.GetRemoteUri();
-                string service = GetServiceName(remoteUri);
+                Uri remoteWithUserUri = input.GetRemoteUri(includeUser: true);
+                string service = GetServiceName(remoteWithUserUri);
                 string account = GetAccountNameForCredentialQuery(input);
 
                 _context.Trace.WriteLine($"Looking for existing credential in store with service={service} account={account}...");
@@ -208,19 +208,25 @@ namespace Microsoft.AzureRepos
             base.ReleaseManagedResources();
         }
 
+        private void ThrowIfUnsafeRemote(InputArguments input)
+        {
+            if (!_context.Settings.AllowUnsafeRemotes &&
+                StringComparer.OrdinalIgnoreCase.Equals(input.Protocol, "http"))
+            {
+                throw new Trace2Exception(_context.Trace2,
+                    "Unencrypted HTTP is not recommended for Azure Repos. " +
+                    "Ensure the repository remote URL is using HTTPS " +
+                    $"or see {Constants.HelpUrls.GcmUnsafeRemotes} about how to allow unsafe remotes.");
+            }
+        }
+
         private async Task<ICredential> GeneratePersonalAccessTokenAsync(InputArguments input)
         {
             ThrowIfDisposed();
+            ThrowIfUnsafeRemote(input);
 
-            // We should not allow unencrypted communication and should inform the user
-            if (StringComparer.OrdinalIgnoreCase.Equals(input.Protocol, "http"))
-            {
-                throw new Trace2Exception(_context.Trace2,
-                    "Unencrypted HTTP is not supported for Azure Repos. Ensure the repository remote URL is using HTTPS.");
-            }
-
-            Uri remoteUri = input.GetRemoteUri();
-            Uri orgUri = UriHelpers.CreateOrganizationUri(remoteUri, out _);
+            Uri remoteUserUri = input.GetRemoteUri(includeUser: true);
+            Uri orgUri = UriHelpers.CreateOrganizationUri(remoteUserUri, out _);
 
             // Determine the MS authentication authority for this organization
             _context.Trace.WriteLine("Determining Microsoft Authentication Authority...");
@@ -257,17 +263,12 @@ namespace Microsoft.AzureRepos
 
         private async Task<IMicrosoftAuthenticationResult> GetAzureAccessTokenAsync(InputArguments input)
         {
-            Uri remoteUri = input.GetRemoteUri();
+            ThrowIfUnsafeRemote(input);
+
+            Uri remoteWithUserUri = input.GetRemoteUri(includeUser: true);
             string userName = input.UserName;
 
-            // We should not allow unencrypted communication and should inform the user
-            if (StringComparer.OrdinalIgnoreCase.Equals(remoteUri.Scheme, "http"))
-            {
-                throw new Trace2Exception(_context.Trace2,
-                    "Unencrypted HTTP is not supported for Azure Repos. Ensure the repository remote URL is using HTTPS.");
-            }
-
-            Uri orgUri = UriHelpers.CreateOrganizationUri(remoteUri, out string orgName);
+            Uri orgUri = UriHelpers.CreateOrganizationUri(remoteWithUserUri, out string orgName);
 
             _context.Trace.WriteLine($"Determining Microsoft Authentication authority for Azure DevOps organization '{orgName}'...");
             if (TryGetAuthorityFromHeaders(input.WwwAuth, out string authAuthority))
@@ -306,8 +307,8 @@ namespace Microsoft.AzureRepos
             //
             var icmp = StringComparer.OrdinalIgnoreCase;
             if (!string.IsNullOrWhiteSpace(userName) &&
-                (UriHelpers.IsVisualStudioComHost(remoteUri.Host) ||
-                 (UriHelpers.IsAzureDevOpsHost(remoteUri.Host) && !icmp.Equals(orgName, userName))))
+                (UriHelpers.IsVisualStudioComHost(remoteWithUserUri.Host) ||
+                 (UriHelpers.IsAzureDevOpsHost(remoteWithUserUri.Host) && !icmp.Equals(orgName, userName))))
             {
                 _context.Trace.WriteLine("Using username as specified in remote.");
             }
@@ -422,7 +423,7 @@ namespace Microsoft.AzureRepos
             {
                 // If we're given the full path for an older *.visualstudio.com-style URL then we should
                 // respect that in the service name.
-                return remoteUri.AbsoluteUri.TrimEnd('/');
+                return remoteUri.WithoutUserInfo().AbsoluteUri.TrimEnd('/');
             }
 
             throw new InvalidOperationException("Host is not Azure DevOps.");
@@ -549,6 +550,12 @@ namespace Microsoft.AzureRepos
 
             if (hasCertThumbprint)
             {
+                sp.SendX5C = _context.Settings.TryGetSetting(
+                    AzureDevOpsConstants.EnvironmentVariables.ServicePrincipalCertificateSendX5C,
+                    Constants.GitConfiguration.Credential.SectionName,
+                    AzureDevOpsConstants.GitConfiguration.Credential.ServicePrincipalCertificateSendX5C,
+                    out string certHasX5CStr) && certHasX5CStr.ToBooleanyOrDefault(false);
+
                 X509Certificate2 cert = X509Utils.GetCertificateByThumbprint(certThumbprint);
                 if (cert is null)
                 {

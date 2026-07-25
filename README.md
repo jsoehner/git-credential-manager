@@ -47,8 +47,8 @@ Basic HTTP authentication support|&#10003;|&#10003;|&#10003;
 Proxy support|&#10003;|&#10003;|&#10003;
 `amd64` support|&#10003;|&#10003;|&#10003;
 `x86` support|&#10003;|_N/A_|&#10007;
-`arm64` support|best effort|&#10003;|best effort, no packages
-`armhf` support|_N/A_|_N/A_|best effort, no packages
+`arm64` support|best effort|&#10003;|&#10003;
+`armhf` support|_N/A_|_N/A_|&#10003;
 
 (\*) GCM guarantees support only for [the Linux distributions that are officially
 supported by dotnet][dotnet-distributions].
@@ -115,7 +115,7 @@ We're [MIT][gcm-license] licensed.
 When using GitHub logos, please be sure to follow the
 [GitHub logo guidelines][github-logos].
 
-[azure-devops]: https://dev.azure.com/
+[azure-devops]: https://azure.microsoft.com/en-us/products/devops
 [azure-devops-ssh]: https://docs.microsoft.com/en-us/azure/devops/repos/git/use-ssh-keys-to-authenticate?view=azure-devops
 [bitbucket]: https://bitbucket.org
 [bitbucket-ssh]: https://confluence.atlassian.com/bitbucket/ssh-keys-935365775.html

@@ -54,6 +54,17 @@ namespace GitCredentialManager
         {
             ThrowIfDisposed();
 
+            // We only want to *warn* about HTTP remotes for the generic provider because it supports all protocols
+            // and, historically, we never blocked HTTP remotes in this provider.
+            // The user can always set the 'GCM_ALLOW_UNSAFE' setting to silence the warning.
+            if (!Context.Settings.AllowUnsafeRemotes &&
+                StringComparer.OrdinalIgnoreCase.Equals(input.Protocol, "http"))
+            {
+                Context.Streams.Error.WriteLine(
+                    "warning: use of unencrypted HTTP remote URLs is not recommended; " +
+                    $"see {Constants.HelpUrls.GcmUnsafeRemotes} for more information.");
+            }
+
             Uri uri = input.GetRemoteUri();
 
             // Determine the if the host supports Windows Integration Authentication (WIA) or OAuth
@@ -63,7 +74,7 @@ namespace GitCredentialManager
                 // Cannot check WIA or OAuth support for non-HTTP based protocols
             }
             // Check for an OAuth configuration for this remote
-            else if (GenericOAuthConfig.TryGet(Context.Trace, Context.Settings, uri, out GenericOAuthConfig oauthConfig))
+            else if (GenericOAuthConfig.TryGet(Context.Trace, Context.Settings, input, out GenericOAuthConfig oauthConfig))
             {
                 Context.Trace.WriteLine($"Found generic OAuth configuration for '{uri}':");
                 Context.Trace.WriteLine($"\tAuthzEndpoint   = {oauthConfig.Endpoints.AuthorizationEndpoint}");

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net.Http;
 using System.Threading.Tasks;
 using Atlassian.Bitbucket.Cloud;
@@ -43,14 +44,19 @@ namespace Atlassian.Bitbucket
                 return false;
             }
 
+            if (input.WwwAuth.Any(x => x.Contains("realm=\"Atlassian Bitbucket\"", StringComparison.InvariantCultureIgnoreCase)))
+            {
+                return true;
+            }
+
             // Split port number and hostname from host input argument
             if (!input.TryGetHostAndPort(out string hostName, out _))
             {
                 return false;
             }
 
-            // We do not support unencrypted HTTP communications to Bitbucket,
-            // but we report `true` here for HTTP so that we can show a helpful
+            // We do not recommend unencrypted HTTP communications to Bitbucket, but it is possible.
+            // Therefore, we report `true` here for HTTP so that we can show a helpful
             // error message for the user in `GetCredentialAsync`.
             return (StringComparer.OrdinalIgnoreCase.Equals(input.Protocol, "http") ||
                     StringComparer.OrdinalIgnoreCase.Equals(input.Protocol, "https")) &&
@@ -75,11 +81,14 @@ namespace Atlassian.Bitbucket
         public async Task<ICredential> GetCredentialAsync(InputArguments input)
         {
             // We should not allow unencrypted communication and should inform the user
-            if (StringComparer.OrdinalIgnoreCase.Equals(input.Protocol, "http")
-                && BitbucketHelper.IsBitbucketOrg(input))
+            if (!_context.Settings.AllowUnsafeRemotes &&
+                StringComparer.OrdinalIgnoreCase.Equals(input.Protocol, "http") &&
+                BitbucketHelper.IsBitbucketOrg(input))
             {
                 throw new Trace2Exception(_context.Trace2,
-                    "Unencrypted HTTP is not supported for Bitbucket.org. Ensure the repository remote URL is using HTTPS.");
+                    "Unencrypted HTTP is not recommended for Bitbucket.org. " +
+                    "Ensure the repository remote URL is using HTTPS " +
+                    $"or see {Constants.HelpUrls.GcmUnsafeRemotes} about how to allow unsafe remotes.");
             }
 
             var authModes = await GetSupportedAuthenticationModesAsync(input);

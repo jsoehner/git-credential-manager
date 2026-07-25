@@ -23,6 +23,10 @@ case "$i" in
     CONFIGURATION="${i#*=}"
     shift # past argument=value
     ;;
+    --runtime=*)
+    RUNTIME="${i#*=}"
+    shift # past argument=value
+    ;;
     *)
           # unknown option
     ;;
@@ -38,8 +42,7 @@ GCM_SRC="$SRC/shared/Git-Credential-Manager"
 PROJ_OUT="$OUT/linux/Packaging.Linux"
 
 # Build parameters
-FRAMEWORK=net7.0
-RUNTIME=linux-x64
+FRAMEWORK=net8.0
 
 # Perform pre-execution checks
 CONFIGURATION="${CONFIGURATION:=Debug}"
@@ -69,13 +72,22 @@ fi
 
 # Publish core application executables
 echo "Publishing core application..."
-$DOTNET_ROOT/dotnet publish "$GCM_SRC" \
-	--configuration="$CONFIGURATION" \
-	--framework="$FRAMEWORK" \
-	--runtime="$RUNTIME" \
-	--self-contained \
-	-p:PublishSingleFile=true \
-	--output="$(make_absolute "$PAYLOAD")" || exit 1
+if [ -z "$RUNTIME" ]; then
+    $DOTNET_ROOT/dotnet publish "$GCM_SRC" \
+        --configuration="$CONFIGURATION" \
+        --framework="$FRAMEWORK" \
+        --self-contained \
+        -p:PublishSingleFile=true \
+        --output="$(make_absolute "$PAYLOAD")" || exit 1
+else
+    $DOTNET_ROOT/dotnet publish "$GCM_SRC" \
+        --configuration="$CONFIGURATION" \
+        --framework="$FRAMEWORK" \
+        --runtime="$RUNTIME" \
+        --self-contained \
+        -p:PublishSingleFile=true \
+        --output="$(make_absolute "$PAYLOAD")" || exit 1
+fi
 
 # Collect symbols
 echo "Collecting managed symbols..."

@@ -185,6 +185,16 @@ namespace GitCredentialManager
         bool UseMsAuthDefaultAccount { get; }
 
         /// <summary>
+        /// True if software rendering should be used for graphical user interfaces, false otherwise.
+        /// </summary>
+        bool UseSoftwareRendering { get; }
+
+        /// <summary>
+        /// Permit the use of unsafe remotes URLs such as regular HTTP.
+        /// </summary>
+        bool AllowUnsafeRemotes { get; }
+
+        /// <summary>
         /// Get TRACE2 settings.
         /// </summary>
         /// <returns>TRACE2 settings object.</returns>
@@ -558,6 +568,28 @@ namespace GitCredentialManager
                 KnownGitCfg.Credential.SectionName,
                 KnownGitCfg.Credential.Trace,
                 out value) && !value.IsFalsey();
+
+        public bool UseSoftwareRendering
+        {
+            get
+            {
+                // WORKAROUND: Some Windows ARM devices have a graphics driver issue that causes transparent windows
+                // when using hardware rendering. Until this is fixed, we will default to software rendering on these
+                // devices. Users can always override this setting back to HW-accelerated rendering if they wish.
+                bool defaultValue = PlatformUtils.IsWindows() && PlatformUtils.IsArm();
+
+                return TryGetSetting(KnownEnvars.GcmGuiSoftwareRendering,
+                    KnownGitCfg.Credential.SectionName,
+                    KnownGitCfg.Credential.GuiSoftwareRendering,
+                    out string str) ? str.ToBooleanyOrDefault(defaultValue) : defaultValue;
+            }
+        }
+
+        public bool AllowUnsafeRemotes =>
+            TryGetSetting(KnownEnvars.GcmAllowUnsafeRemotes,
+                KnownGitCfg.Credential.SectionName,
+                KnownGitCfg.Credential.AllowUnsafeRemotes,
+                out string str) && str.ToBooleanyOrDefault(false);
 
         public Trace2Settings GetTrace2Settings()
         {
