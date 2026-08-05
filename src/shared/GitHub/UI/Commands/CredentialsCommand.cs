@@ -38,10 +38,10 @@ namespace GitHub.UI.Commands
             this.SetHandler(ExecuteAsync, url, userName, basic, browser, device, pat, all);
         }
 
-        private async Task<int> ExecuteAsync(string userName, string enterpriseUrl,
+        private async Task<int> ExecuteAsync(string enterpriseUrl, string userName,
             bool basic, bool browser, bool device, bool pat, bool all)
         {
-            var viewModel = new CredentialsViewModel(Context.Environment, Context.ProcessManager)
+            var viewModel = new CredentialsViewModel(Context.SessionManager, Context.ProcessManager)
             {
                 ShowBrowserLogin = all || browser,
                 ShowDeviceLogin  = all || device,

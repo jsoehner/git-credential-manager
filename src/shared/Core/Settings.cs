@@ -489,7 +489,7 @@ namespace GitCredentialManager
         /// <param name="property">Configuration property name.</param>
         /// <param name="value">Value of the configuration setting, or null.</param>
         /// <returns>True if a default setting has been set, false otherwise.</returns>
-        protected virtual bool TryGetExternalDefault(string section, string scope, string property, out string value)
+        protected internal virtual bool TryGetExternalDefault(string section, string scope, string property, out string value)
         {
             value = null;
             return false;
@@ -659,7 +659,7 @@ namespace GitCredentialManager
         }
 
         public bool AutomaticallyUseClientCertificates =>
-            TryGetSetting(null, KnownGitCfg.Credential.SectionName, KnownGitCfg.Http.SslAutoClientCert, out string value) && value.ToBooleanyOrDefault(false);
+            TryGetSetting(null, KnownGitCfg.Http.SectionName, KnownGitCfg.Http.SslAutoClientCert, out string value) && value.ToBooleanyOrDefault(false);
 
         public string CustomCertificateBundlePath =>
             TryGetPathSetting(KnownEnvars.GitSslCaInfo, KnownGitCfg.Http.SectionName, KnownGitCfg.Http.SslCaInfo, out string value) ? value : null;

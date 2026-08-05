@@ -74,20 +74,33 @@ namespace Microsoft.AzureRepos
             return false;
         }
 
-        public async Task<ICredential> GetCredentialAsync(InputArguments input)
+        public async Task<GetCredentialResult> GetCredentialAsync(InputArguments input)
         {
             if (UseManagedIdentity(out string mid))
             {
                 _context.Trace.WriteLine($"Getting Azure Access Token for managed identity {mid}...");
                 var azureResult = await _msAuth.GetTokenForManagedIdentityAsync(mid, AzureDevOpsConstants.AzureDevOpsResourceId);
-                return new GitCredential(mid, azureResult.AccessToken);
+                return new GetCredentialResult(
+                    new GitCredential(mid, azureResult.AccessToken)
+                );
+            }
+
+            if (UseWorkloadFederation(out MicrosoftWorkloadFederationOptions fedOpts))
+            {
+                _context.Trace.WriteLine($"Getting Azure Access Token using WIF (scenario: {fedOpts.Scenario})...");
+                var azureResult = await _msAuth.GetTokenUsingWorkloadFederationAsync(fedOpts, AzureDevOpsConstants.AzureDevOpsDefaultScopes);
+                return new GetCredentialResult(
+                    new GitCredential(fedOpts.ClientId, azureResult.AccessToken)
+                );
             }
 
             if (UseServicePrincipal(out ServicePrincipalIdentity sp))
             {
                 _context.Trace.WriteLine($"Getting Azure Access Token for service principal {sp.TenantId}/{sp.Id}...");
                 var azureResult = await _msAuth.GetTokenForServicePrincipalAsync(sp, AzureDevOpsConstants.AzureDevOpsDefaultScopes);
-                return new GitCredential(sp.Id, azureResult.AccessToken);
+                return new GetCredentialResult(
+                    new GitCredential(sp.Id, azureResult.AccessToken)
+                );
             }
 
             if (UsePersonalAccessTokens())
@@ -113,14 +126,15 @@ namespace Microsoft.AzureRepos
                     _context.Trace.WriteLine("Existing credential found.");
                 }
 
-                return credential;
+                return new GetCredentialResult(credential);
             }
             else
             {
                 // Include the username request here so that we may use it as an override
                 // for user account lookups when getting Azure Access Tokens.
                 var azureResult = await GetAzureAccessTokenAsync(input);
-                return new GitCredential(azureResult.AccountUpn, azureResult.AccessToken);
+                var azureCredential = new GitCredential(azureResult.AccountUpn, azureResult.AccessToken);
+                return new GetCredentialResult(azureCredential);
             }
         }
 
@@ -131,6 +145,10 @@ namespace Microsoft.AzureRepos
             if (UseManagedIdentity(out _))
             {
                 _context.Trace.WriteLine("Nothing to store for managed identity authentication.");
+            }
+            else if (UseWorkloadFederation(out _))
+            {
+                _context.Trace.WriteLine("Nothing to store for federated identity authentication.");
             }
             else if (UseServicePrincipal(out _))
             {
@@ -166,6 +184,10 @@ namespace Microsoft.AzureRepos
             if (UseManagedIdentity(out _))
             {
                 _context.Trace.WriteLine("Nothing to erase for managed identity authentication.");
+            }
+            else if (UseWorkloadFederation(out _))
+            {
+                _context.Trace.WriteLine("Nothing to erase for federated identity authentication.");
             }
             else if (UseServicePrincipal(out _))
             {
@@ -581,6 +603,160 @@ namespace Microsoft.AzureRepos
                        AzureDevOpsConstants.GitConfiguration.Credential.ManagedIdentity,
                        out mid) &&
                    !string.IsNullOrWhiteSpace(mid);
+        }
+
+        private bool UseWorkloadFederation(out MicrosoftWorkloadFederationOptions fedOpts)
+        {
+            if (!_context.Settings.TryGetSetting(
+                    AzureDevOpsConstants.EnvironmentVariables.WorkloadFederation,
+                    Constants.GitConfiguration.Credential.SectionName,
+                    AzureDevOpsConstants.GitConfiguration.Credential.WorkloadFederation,
+                    out string wifStr))
+            {
+                fedOpts = null;
+                return false;
+            }
+
+            MicrosoftWorkloadFederationScenario scenario;
+            switch (wifStr.ToLowerInvariant())
+            {
+                case "generic":
+                    scenario = MicrosoftWorkloadFederationScenario.Generic;
+                    break;
+
+                case "mi":
+                case "managedidentity":
+                    scenario = MicrosoftWorkloadFederationScenario.ManagedIdentity;
+                    break;
+
+                case "github":
+                case "githubactions":
+                    scenario = MicrosoftWorkloadFederationScenario.GitHubActions;
+                    break;
+
+                default: // Unknown scenario value
+                    fedOpts = null;
+                    return false;
+            }
+
+            bool hasClientId = _context.Settings.TryGetSetting(
+                AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationClientId,
+                Constants.GitConfiguration.Credential.SectionName,
+                AzureDevOpsConstants.GitConfiguration.Credential.WorkloadFederationClientId,
+                out string clientId);
+
+            bool hasTenantId = _context.Settings.TryGetSetting(
+                AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationTenantId,
+                Constants.GitConfiguration.Credential.SectionName,
+                AzureDevOpsConstants.GitConfiguration.Credential.WorkloadFederationTenantId,
+                out string tenantId);
+
+            if (!hasClientId || !hasTenantId)
+            {
+                _context.Streams.Error.WriteLine("error: both client ID and tenant ID are required for workload federation");
+                fedOpts = null;
+                return false;
+            }
+
+            // Audience is optional - the default is "api://AzureADTokenExchange"
+            if (!_context.Settings.TryGetSetting(
+                    AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationAudience,
+                    Constants.GitConfiguration.Credential.SectionName,
+                    AzureDevOpsConstants.GitConfiguration.Credential.WorkloadFederationAudience,
+                    out string audience) || string.IsNullOrWhiteSpace(audience))
+            {
+                audience = MicrosoftWorkloadFederationOptions.DefaultAudience;
+            }
+
+            fedOpts = new MicrosoftWorkloadFederationOptions
+            {
+                Scenario = scenario,
+                ClientId = clientId,
+                TenantId = tenantId,
+                Audience = audience
+            };
+
+            switch (scenario)
+            {
+                case MicrosoftWorkloadFederationScenario.Generic:
+                    if (!_context.Settings.TryGetSetting(
+                            AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationAssertion,
+                            Constants.GitConfiguration.Credential.SectionName,
+                            AzureDevOpsConstants.GitConfiguration.Credential.WorkloadFederationAssertion,
+                            out string assertion) || string.IsNullOrWhiteSpace(assertion))
+                    {
+                        _context.Streams.Error.WriteLine("error: assertion is required for the generic workload federation scenario");
+                        fedOpts = null;
+                        return false;
+                    }
+
+                    // Check if this value points to a file containing the actual assertion (file://<path>)
+                    if (Uri.TryCreate(assertion, UriKind.Absolute, out Uri assertionUri)
+                        && StringComparer.OrdinalIgnoreCase.Equals(assertionUri.Scheme, "file"))
+                    {
+                        string filePath = assertionUri.LocalPath;
+                        if (!_context.FileSystem.FileExists(filePath))
+                        {
+                            _context.Streams.Error.WriteLine($"error: assertion file not found: {filePath}");
+                            fedOpts = null;
+                            return false;
+                        }
+
+                        _context.Trace.WriteLine($"Reading workload federation assertion from file '{filePath}'...");
+                        assertion = _context.FileSystem.ReadAllText(filePath).Trim();
+                        if (string.IsNullOrWhiteSpace(assertion))
+                        {
+                            _context.Streams.Error.WriteLine($"error: assertion file is empty: {filePath}");
+                            fedOpts = null;
+                            return false;
+                        }
+                    }
+
+                    fedOpts.GenericClientAssertion = assertion;
+                    break;
+
+                case MicrosoftWorkloadFederationScenario.ManagedIdentity:
+                    if (!_context.Settings.TryGetSetting(
+                            AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationManagedIdentity,
+                            Constants.GitConfiguration.Credential.SectionName,
+                            AzureDevOpsConstants.GitConfiguration.Credential.WorkloadFederationManagedIdentity,
+                            out string managedIdentity) || string.IsNullOrWhiteSpace(managedIdentity))
+                    {
+                        _context.Streams.Error.WriteLine("error: managed identity is required for the managed identity workload federation scenario");
+                        fedOpts = null;
+                        return false;
+                    }
+
+                    fedOpts.ManagedIdentityId = managedIdentity;
+                    break;
+
+                case MicrosoftWorkloadFederationScenario.GitHubActions:
+                    if (!_context.Environment.Variables.TryGetValue(
+                            Constants.EnvironmentVariables.GitHubActionsTokenRequestUrl, out string tokenRequestUrl)
+                        || !Uri.TryCreate(tokenRequestUrl, UriKind.Absolute, out Uri tokenRequestUri))
+                    {
+                        _context.Streams.Error.WriteLine(
+                            "error: unable to get valid token request URL from environment variable for the GitHub Actions workload federation scenario");
+                        fedOpts = null;
+                        return false;
+                    }
+
+                    if (!_context.Environment.Variables.TryGetValue(
+                            Constants.EnvironmentVariables.GitHubActionsTokenRequestToken, out string tokenRequestToken)
+                        || string.IsNullOrWhiteSpace(tokenRequestToken))
+                    {
+                        _context.Streams.Error.WriteLine(
+                            "error: unable to get valid token request token from environment variable for the GitHub Actions workload federation scenario");
+                        fedOpts = null;
+                        return false;
+                    }
+
+                    fedOpts.GitHubTokenRequestUrl = tokenRequestUri;
+                    fedOpts.GitHubTokenRequestToken = tokenRequestToken;
+                    break;
+            }
+
+            return true;
         }
 
         #endregion

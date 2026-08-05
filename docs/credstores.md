@@ -277,13 +277,13 @@ Note that you'll want to ensure that another credential helper is placed before
 GCM in the `credential.helper` Git configuration or else you will be prompted to
 enter your credentials every time you interact with a remote repository.
 
-[access-windows-credential-manager]: https://support.microsoft.com/en-us/windows/accessing-credential-manager-1b5c916a-6a16-889f-8581-fc16e8165ac0
+[access-windows-credential-manager]: https://support.microsoft.com/en-US/Windows/Security/credential-manager-in-windows
 [aws-cloudshell]: https://aws.amazon.com/cloudshell/
 [azure-cloudshell]: https://docs.microsoft.com/azure/cloud-shell/overview
 [cmdkey]: https://docs.microsoft.com/en-us/windows-server/administration/windows-commands/cmdkey
 [credential-store]: configuration.md#credentialcredentialstore
 [credential-cache]: https://git-scm.com/docs/git-credential-cache
-[freedesktop-secret-service]: https://specifications.freedesktop.org/secret-service-spec/
+[freedesktop-secret-service]: https://specifications.freedesktop.org/secret-service/
 [gcm-credential-store]: environment.md#GCM_CREDENTIAL_STORE
 [git-credential-store]: https://git-scm.com/docs/git-credential-store
 [mac-keychain-management]: https://support.apple.com/en-gb/guide/mac-help/mchlf375f392/mac

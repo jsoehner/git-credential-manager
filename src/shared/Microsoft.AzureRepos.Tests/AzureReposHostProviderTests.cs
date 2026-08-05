@@ -180,7 +180,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOpsMock.Object, msAuthMock.Object, authorityCacheMock.Object, userMgrMock.Object);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(urlAccount, credential.Account);
@@ -229,7 +230,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOpsMock.Object, msAuthMock.Object, authorityCacheMock.Object, userMgrMock.Object);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(urlAccount, credential.Account);
@@ -276,7 +278,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOpsMock.Object, msAuthMock.Object, authorityCacheMock.Object, userMgrMock.Object);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(account, credential.Account);
@@ -323,7 +326,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOpsMock.Object, msAuthMock.Object, authorityCacheMock.Object, userMgrMock.Object);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(account, credential.Account);
@@ -372,7 +376,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOpsMock.Object, msAuthMock.Object, authorityCacheMock.Object, userMgrMock.Object);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(account, credential.Account);
@@ -421,7 +426,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOpsMock.Object, msAuthMock.Object, authorityCacheMock.Object, userMgrMock.Object);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(account, credential.Account);
@@ -465,7 +471,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOpsMock.Object, msAuthMock.Object, authorityCacheMock.Object, userMgrMock.Object);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(account, credential.Account);
@@ -510,7 +517,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOpsMock.Object, msAuthMock.Object, authorityCacheMock.Object, userMgrMock.Object);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(account, credential.Account);
@@ -543,7 +551,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOps, msAuth, authorityCache, userMgr);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(account, credential.Account);
@@ -584,7 +593,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOps, msAuthMock.Object, authorityCache, userMgr);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(managedIdentity, credential.Account);
@@ -593,6 +603,248 @@ namespace Microsoft.AzureRepos.Tests
             msAuthMock.Verify(
                 x => x.GetTokenForManagedIdentityAsync(managedIdentity,
                     AzureDevOpsConstants.AzureDevOpsResourceId), Times.Once);
+        }
+
+        [Fact]
+        public async Task AzureReposProvider_GetCredentialAsync_WorkloadFederation_Generic_ReturnsFederationOptions()
+        {
+            var input = new InputArguments(new Dictionary<string, string>
+            {
+                ["protocol"] = "https",
+                ["host"] = "dev.azure.com",
+                ["path"] = "org/proj/_git/repo"
+            });
+
+            const string accessToken = "FEDERATED-IDENTITY-TOKEN";
+            const string wifScenario = "generic";
+            const string tenantId = "00000000-0000-0000-0000-000000000000";
+            const string clientId = "11111111-1111-1111-1111-111111111111";
+            const string assertion = "CLIENT-ASSERTION";
+
+            var context = new TestCommandContext
+            {
+                Environment =
+                {
+                    Variables =
+                    {
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederation] = wifScenario,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationTenantId] = tenantId,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationClientId] = clientId,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationAssertion] = assertion,
+                    }
+                }
+            };
+
+            var azDevOps = Mock.Of<IAzureDevOpsRestApi>();
+            var authorityCache = Mock.Of<IAzureDevOpsAuthorityCache>();
+            var userMgr = Mock.Of<IAzureReposBindingManager>();
+            var msAuthMock = new Mock<IMicrosoftAuthentication>();
+
+            msAuthMock.Setup(x => x.GetTokenUsingWorkloadFederationAsync(
+                    It.IsAny<MicrosoftWorkloadFederationOptions>(), It.IsAny<string[]>()))
+                .ReturnsAsync(new MockMsAuthResult { AccessToken = accessToken });
+
+            var provider = new AzureReposHostProvider(context, azDevOps, msAuthMock.Object, authorityCache, userMgr);
+
+            GetCredentialResult result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
+
+            Assert.NotNull(credential);
+            Assert.Equal(clientId, credential.Account);
+            Assert.Equal(accessToken, credential.Password);
+
+            msAuthMock.Verify(
+                x => x.GetTokenUsingWorkloadFederationAsync(
+                    It.Is<MicrosoftWorkloadFederationOptions>(
+                        fed => fed.Scenario == MicrosoftWorkloadFederationScenario.Generic &&
+                              fed.TenantId == tenantId &&
+                              fed.ClientId == clientId &&
+                              fed.Audience == MicrosoftWorkloadFederationOptions.DefaultAudience &&
+                              fed.GenericClientAssertion == assertion),
+                    AzureDevOpsConstants.AzureDevOpsDefaultScopes), Times.Once);
+        }
+
+        [Fact]
+        public async Task AzureReposProvider_GetCredentialAsync_WorkloadFederation_GenericFileAssertion_ReadsFromFile()
+        {
+            var input = new InputArguments(new Dictionary<string, string>
+            {
+                ["protocol"] = "https",
+                ["host"] = "dev.azure.com",
+                ["path"] = "org/proj/_git/repo"
+            });
+
+            const string accessToken = "FEDERATED-IDENTITY-TOKEN";
+            const string wifScenario = "generic";
+            const string tenantId = "00000000-0000-0000-0000-000000000000";
+            const string clientId = "11111111-1111-1111-1111-111111111111";
+            const string assertion = "CLIENT-ASSERTION-FROM-FILE";
+            const string filePath = "/tmp/assertion-token.txt";
+
+            var context = new TestCommandContext
+            {
+                Environment =
+                {
+                    Variables =
+                    {
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederation] = wifScenario,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationTenantId] = tenantId,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationClientId] = clientId,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationAssertion] = $"file://{filePath}",
+                    }
+                }
+            };
+
+            context.FileSystem.Files[filePath] = System.Text.Encoding.UTF8.GetBytes(assertion);
+
+            var azDevOps = Mock.Of<IAzureDevOpsRestApi>();
+            var authorityCache = Mock.Of<IAzureDevOpsAuthorityCache>();
+            var userMgr = Mock.Of<IAzureReposBindingManager>();
+            var msAuthMock = new Mock<IMicrosoftAuthentication>();
+
+            msAuthMock.Setup(x => x.GetTokenUsingWorkloadFederationAsync(
+                    It.IsAny<MicrosoftWorkloadFederationOptions>(), It.IsAny<string[]>()))
+                .ReturnsAsync(new MockMsAuthResult { AccessToken = accessToken });
+
+            var provider = new AzureReposHostProvider(context, azDevOps, msAuthMock.Object, authorityCache, userMgr);
+
+            GetCredentialResult result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
+
+            Assert.NotNull(credential);
+            Assert.Equal(clientId, credential.Account);
+            Assert.Equal(accessToken, credential.Password);
+
+            msAuthMock.Verify(
+                x => x.GetTokenUsingWorkloadFederationAsync(
+                    It.Is<MicrosoftWorkloadFederationOptions>(
+                        fed => fed.Scenario == MicrosoftWorkloadFederationScenario.Generic &&
+                              fed.TenantId == tenantId &&
+                              fed.ClientId == clientId &&
+                              fed.Audience == MicrosoftWorkloadFederationOptions.DefaultAudience &&
+                              fed.GenericClientAssertion == assertion),
+                    AzureDevOpsConstants.AzureDevOpsDefaultScopes), Times.Once);
+        }
+
+        [Fact]
+        public async Task AzureReposProvider_GetCredentialAsync_WorkloadFederation_MI_ReturnsFederationOptions()
+        {
+            var input = new InputArguments(new Dictionary<string, string>
+            {
+                ["protocol"] = "https",
+                ["host"] = "dev.azure.com",
+                ["path"] = "org/proj/_git/repo"
+            });
+
+            const string accessToken = "FEDERATED-IDENTITY-TOKEN";
+            const string wifScenario = "managedidentity";
+            const string tenantId = "00000000-0000-0000-0000-000000000000";
+            const string clientId = "11111111-1111-1111-1111-111111111111";
+            const string managedIdentity = "22222222-2222-2222-2222-222222222222";
+
+            var context = new TestCommandContext
+            {
+                Environment =
+                {
+                    Variables =
+                    {
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederation] = wifScenario,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationTenantId] = tenantId,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationClientId] = clientId,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationManagedIdentity] = managedIdentity,
+                    }
+                }
+            };
+
+            var azDevOps = Mock.Of<IAzureDevOpsRestApi>();
+            var authorityCache = Mock.Of<IAzureDevOpsAuthorityCache>();
+            var userMgr = Mock.Of<IAzureReposBindingManager>();
+            var msAuthMock = new Mock<IMicrosoftAuthentication>();
+
+            msAuthMock.Setup(x => x.GetTokenUsingWorkloadFederationAsync(
+                    It.IsAny<MicrosoftWorkloadFederationOptions>(), It.IsAny<string[]>()))
+                .ReturnsAsync(new MockMsAuthResult { AccessToken = accessToken });
+
+            var provider = new AzureReposHostProvider(context, azDevOps, msAuthMock.Object, authorityCache, userMgr);
+
+            GetCredentialResult result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
+
+            Assert.NotNull(credential);
+            Assert.Equal(clientId, credential.Account);
+            Assert.Equal(accessToken, credential.Password);
+
+            msAuthMock.Verify(
+                x => x.GetTokenUsingWorkloadFederationAsync(
+                    It.Is<MicrosoftWorkloadFederationOptions>(
+                        fed => fed.Scenario == MicrosoftWorkloadFederationScenario.ManagedIdentity &&
+                              fed.TenantId == tenantId &&
+                              fed.ClientId == clientId &&
+                              fed.Audience == MicrosoftWorkloadFederationOptions.DefaultAudience &&
+                              fed.ManagedIdentityId == managedIdentity),
+                    AzureDevOpsConstants.AzureDevOpsDefaultScopes), Times.Once);
+        }
+
+        [Fact]
+        public async Task AzureReposProvider_GetCredentialAsync_WorkloadFederation_GitHubActions_ReturnsFederationOptions()
+        {
+            var input = new InputArguments(new Dictionary<string, string>
+            {
+                ["protocol"] = "https",
+                ["host"] = "dev.azure.com",
+                ["path"] = "org/proj/_git/repo"
+            });
+
+            const string accessToken = "FEDERATED-IDENTITY-TOKEN";
+            const string wifScenario = "githubactions";
+            const string tenantId = "00000000-0000-0000-0000-000000000000";
+            const string clientId = "11111111-1111-1111-1111-111111111111";
+            const string ghRequestUrl = "https://token.actions.example.com/oidc/example?param=value";
+            const string ghRequestToken = "OIDC-TOKEN";
+
+            var context = new TestCommandContext
+            {
+                Environment =
+                {
+                    Variables =
+                    {
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederation] = wifScenario,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationTenantId] = tenantId,
+                        [AzureDevOpsConstants.EnvironmentVariables.WorkloadFederationClientId] = clientId,
+                        [Constants.EnvironmentVariables.GitHubActionsTokenRequestUrl] = ghRequestUrl,
+                        [Constants.EnvironmentVariables.GitHubActionsTokenRequestToken] = ghRequestToken,
+                    }
+                }
+            };
+
+            var azDevOps = Mock.Of<IAzureDevOpsRestApi>();
+            var authorityCache = Mock.Of<IAzureDevOpsAuthorityCache>();
+            var userMgr = Mock.Of<IAzureReposBindingManager>();
+            var msAuthMock = new Mock<IMicrosoftAuthentication>();
+
+            msAuthMock.Setup(x => x.GetTokenUsingWorkloadFederationAsync(
+                    It.IsAny<MicrosoftWorkloadFederationOptions>(), It.IsAny<string[]>()))
+                .ReturnsAsync(new MockMsAuthResult { AccessToken = accessToken });
+
+            var provider = new AzureReposHostProvider(context, azDevOps, msAuthMock.Object, authorityCache, userMgr);
+
+            GetCredentialResult result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
+
+            Assert.NotNull(credential);
+            Assert.Equal(clientId, credential.Account);
+            Assert.Equal(accessToken, credential.Password);
+
+            msAuthMock.Verify(
+                x => x.GetTokenUsingWorkloadFederationAsync(
+                    It.Is<MicrosoftWorkloadFederationOptions>(
+                        fed => fed.Scenario == MicrosoftWorkloadFederationScenario.GitHubActions &&
+                              fed.TenantId == tenantId &&
+                              fed.ClientId == clientId &&
+                              fed.GitHubTokenRequestUrl == new Uri(ghRequestUrl) &&
+                              fed.GitHubTokenRequestToken == ghRequestToken &&
+                              fed.Audience == MicrosoftWorkloadFederationOptions.DefaultAudience),
+                    AzureDevOpsConstants.AzureDevOpsDefaultScopes), Times.Once);
         }
 
         [Fact]
@@ -634,7 +886,8 @@ namespace Microsoft.AzureRepos.Tests
 
             var provider = new AzureReposHostProvider(context, azDevOps, msAuthMock.Object, authorityCache, userMgr);
 
-            ICredential credential = await provider.GetCredentialAsync(input);
+            var result = await provider.GetCredentialAsync(input);
+            ICredential credential = result.Credential;
 
             Assert.NotNull(credential);
             Assert.Equal(clientId, credential.Account);

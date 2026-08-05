@@ -125,7 +125,7 @@ namespace GitHub
             return url.TrimEnd('/');
         }
 
-        public async Task<ICredential> GetCredentialAsync(InputArguments input)
+        public async Task<GetCredentialResult> GetCredentialAsync(InputArguments input)
         {
             string service = GetServiceName(input);
             Uri remoteUri = input.GetRemoteUri();
@@ -190,7 +190,7 @@ namespace GitHub
                 _context.Trace.WriteLine("Existing credential found.");
             }
 
-            return credential;
+            return new GetCredentialResult(credential);
         }
 
         private bool FilterAccounts(Uri remoteUri, IEnumerable<string> wwwAuth, ref IList<string> accounts)
@@ -198,6 +198,7 @@ namespace GitHub
             if (!IsGitHubDotCom(remoteUri))
             {
                 _context.Trace.WriteLine("No account filtering outside of GitHub.com.");
+                return false;
             }
 
             // Allow the user to disable account filtering until this feature stabilises.

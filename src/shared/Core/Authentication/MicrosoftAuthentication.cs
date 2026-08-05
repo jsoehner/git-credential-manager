@@ -9,6 +9,7 @@ using GitCredentialManager.Interop.Windows.Native;
 using Microsoft.Identity.Client;
 using Microsoft.Identity.Client.Extensions.Msal;
 using System.Text;
+using System.Text.Json;
 using System.Threading;
 using GitCredentialManager.UI;
 using GitCredentialManager.UI.Controls;
@@ -29,7 +30,7 @@ namespace GitCredentialManager.Authentication
         /// </summary>
         /// <param name="authority">Azure authority.</param>
         /// <param name="clientId">Client ID.</param>
-        /// <param name="redirectUri">Redirect URI for the client.</param>
+        /// <param name="redirectUri">Redirect URI for the client. Use null for the default redirect URI.</param>
         /// <param name="scopes">Set of scopes to request.</param>
         /// <param name="userName">Optional user name for an existing account.</param>
         /// <param name="msaPt">Use MSA-Passthrough behavior when authenticating.</param>
@@ -63,6 +64,14 @@ namespace GitCredentialManager.Authentication
         ///  - <c>"resource://{guid}"</c> - Use the user-assigned managed identity with resource ID <c>{guid}</c>.
         /// </remarks>
         Task<IMicrosoftAuthenticationResult> GetTokenForManagedIdentityAsync(string managedIdentity, string resource);
+
+        /// <summary>
+        /// Acquire a token using workload federation.
+        /// </summary>
+        /// <param name="fedOpts">An object containing configuration workload federation.</param>
+        /// <param name="scopes">Scopes to request.</param>
+        /// <returns>Authentication result including access token.</returns>
+        Task<IMicrosoftAuthenticationResult> GetTokenUsingWorkloadFederationAsync(MicrosoftWorkloadFederationOptions fedOpts, string[] scopes);
     }
 
     public class ServicePrincipalIdentity
@@ -107,10 +116,9 @@ namespace GitCredentialManager.Authentication
 
     public enum MicrosoftAuthenticationFlowType
     {
-        Auto = 0,
-        EmbeddedWebView = 1,
-        SystemWebView = 2,
-        DeviceCode = 3
+        EmbeddedWebView,
+        SystemWebView,
+        DeviceCode
     }
 
     public class MicrosoftAuthentication : AuthenticationBase, IMicrosoftAuthentication
@@ -141,6 +149,27 @@ namespace GitCredentialManager.Authentication
             if (msaPt)
             {
                 Context.Trace.WriteLine("MSA passthrough is enabled.");
+            }
+
+            // Check if the user has specified a particular type of authentication flow
+            MicrosoftAuthenticationFlowType flowType = GetFlowType(redirectUri);
+            Context.Trace.WriteLine($"Flow type is: '{flowType}'.");
+
+            // If we are going to use anything *other than* the system webview, we ignore
+            // the provided redirect URI and set it to the default for a native client.
+            // The broker is used above all else, if enabled, but that has a fallback to
+            // the system browser if there is a problem.
+            // We must continue to pass through the provided redirect URI if we're going to
+            // try the system webview, as the system webview requires a real loopback redirect
+            // URI that is registered with the application.
+            if (!useBroker && flowType != MicrosoftAuthenticationFlowType.SystemWebView)
+            {
+                Context.Trace.WriteLine("Using default redirect URI.");
+                redirectUri = null; // null to signal the default redirect URI
+            }
+            else
+            {
+                Context.Trace.WriteLine($"Redirect URI is '{redirectUri}'.");
             }
 
             try
@@ -205,27 +234,17 @@ namespace GitCredentialManager.Authentication
                             Context.Trace.WriteLine("Performing interactive auth with broker...");
                             result = await app.AcquireTokenInteractive(scopes)
                                 .WithPrompt(Prompt.SelectAccount)
-                                // We must configure the system webview as a fallback
+                                // We must configure the system webview as a fallback in case
+                                // the broker is not available on this system.
                                 .WithSystemWebViewOptions(GetSystemWebViewOptions())
                                 .ExecuteAsync();
                         }
                     }
                     else
                     {
-                        // Check for a user flow preference if they've specified one
-                        MicrosoftAuthenticationFlowType flowType = GetFlowType();
+                        // Respect the user's flow preference
                         switch (flowType)
                         {
-                            case MicrosoftAuthenticationFlowType.Auto:
-                                if (CanUseEmbeddedWebView())
-                                    goto case MicrosoftAuthenticationFlowType.EmbeddedWebView;
-
-                                if (CanUseSystemWebView(app, redirectUri))
-                                    goto case MicrosoftAuthenticationFlowType.SystemWebView;
-
-                                // Fall back to device code flow
-                                goto case MicrosoftAuthenticationFlowType.DeviceCode;
-
                             case MicrosoftAuthenticationFlowType.EmbeddedWebView:
                                 Context.Trace.WriteLine("Performing interactive auth with embedded web view...");
                                 EnsureCanUseEmbeddedWebView();
@@ -238,7 +257,7 @@ namespace GitCredentialManager.Authentication
 
                             case MicrosoftAuthenticationFlowType.SystemWebView:
                                 Context.Trace.WriteLine("Performing interactive auth with system web view...");
-                                EnsureCanUseSystemWebView(app, redirectUri);
+                                EnsureCanUseSystemWebView(redirectUri);
                                 result = await app.AcquireTokenInteractive(scopes)
                                     .WithPrompt(Prompt.SelectAccount)
                                     .WithSystemWebViewOptions(GetSystemWebViewOptions())
@@ -254,7 +273,7 @@ namespace GitCredentialManager.Authentication
                                 break;
 
                             default:
-                                goto case MicrosoftAuthenticationFlowType.Auto;
+                                goto case MicrosoftAuthenticationFlowType.DeviceCode; // safe default
                         }
                     }
                 }
@@ -287,7 +306,8 @@ namespace GitCredentialManager.Authentication
             }
         }
 
-        public async Task<IMicrosoftAuthenticationResult> GetTokenForManagedIdentityAsync(string managedIdentity, string resource)
+        public async Task<IMicrosoftAuthenticationResult> GetTokenForManagedIdentityAsync(
+            string managedIdentity, string resource)
         {
             var httpFactoryAdaptor = new MsalHttpClientFactoryAdaptor(Context.HttpClientFactory);
 
@@ -306,8 +326,88 @@ namespace GitCredentialManager.Authentication
             {
                 Context.Trace.WriteLine(mid == ManagedIdentityId.SystemAssigned
                     ? "Failed to acquire token for system managed identity."
-                    : $"Failed to acquire token for user managed identity '{managedIdentity:D}'.");
+                    : $"Failed to acquire token for user managed identity '{managedIdentity}'.");
                 Context.Trace.WriteException(ex);
+                throw;
+            }
+        }
+
+        public async Task<IMicrosoftAuthenticationResult> GetTokenUsingWorkloadFederationAsync(MicrosoftWorkloadFederationOptions fedOpts, string[] scopes)
+        {
+            IConfidentialClientApplication app = await CreateConfidentialClientApplicationAsync(fedOpts);
+
+            AuthenticationResult result = await app.AcquireTokenForClient(scopes)
+              .ExecuteAsync()
+              .ConfigureAwait(false);
+
+            return new MsalResult(result);
+        }
+
+        private async Task<string> GetClientAssertion(MicrosoftWorkloadFederationOptions fedOpts, AssertionRequestOptions _)
+        {
+            switch (fedOpts.Scenario)
+            {
+                case MicrosoftWorkloadFederationScenario.Generic:
+                    Context.Trace.WriteLine("Getting client assertion for generic workload federation scenario...");
+                    if (string.IsNullOrWhiteSpace(fedOpts.GenericClientAssertion))
+                        throw new InvalidOperationException(
+                            "Client assertion must be provided for generic workload federation scenario.");
+                    return fedOpts.GenericClientAssertion;
+
+                case MicrosoftWorkloadFederationScenario.ManagedIdentity:
+                    Context.Trace.WriteLine("Getting client assertion for managed identity workload federation scenario...");
+                    var miResult = await GetTokenForManagedIdentityAsync(fedOpts.ManagedIdentityId, fedOpts.Audience);
+                    return miResult.AccessToken;
+
+                case MicrosoftWorkloadFederationScenario.GitHubActions:
+                    Context.Trace.WriteLine("Getting client assertion for GitHub Actions workload federation scenario...");
+                    return await GetGitHubOidcToken(fedOpts.GitHubTokenRequestUrl, fedOpts.Audience, fedOpts.GitHubTokenRequestToken);
+
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(fedOpts.Scenario), fedOpts.Scenario, "Unsupported workload federation scenario.");
+            }
+        }
+
+        private async Task<string> GetGitHubOidcToken(Uri requestUri, string audience, string requestToken)
+        {
+            using HttpClient http = Context.HttpClientFactory.CreateClient();
+
+            UriBuilder ub = new UriBuilder(requestUri);
+            if (ub.Query.Length > 0) ub.Query += "&";
+            ub.Query += $"audience={Uri.EscapeDataString(audience)}";
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, ub.Uri);
+            request.AddBearerAuthenticationHeader(requestToken);
+
+            Context.Trace.WriteLine($"Requesting GitHub OIDC token from '{request.RequestUri}'...");
+            Context.Trace.WriteLineSecrets("OIDC request token: {0}", new[] { requestToken });
+            using HttpResponseMessage response = await http.SendAsync(request);
+            if (!response.IsSuccessStatusCode)
+            {
+                string error = await response.Content.ReadAsStringAsync();
+                Context.Trace.WriteLine($"Failed to acquire GitHub OIDC token [{response.StatusCode:D} {response.StatusCode}]: {error}");
+                response.EnsureSuccessStatusCode();
+            }
+
+            string json = await response.Content.ReadAsStringAsync();
+
+            try
+            {
+                using JsonDocument jsonDoc = JsonDocument.Parse(json);
+                if (!jsonDoc.RootElement.TryGetProperty("value", out JsonElement tokenElement))
+                {
+                    throw new InvalidOperationException(
+                        "Invalid response from GitHub OIDC token endpoint: 'value' property not found.");
+                }
+
+                return tokenElement.GetString() ??
+                       throw new InvalidOperationException(
+                           "Invalid response from GitHub OIDC token endpoint: 'value' property is null.");
+            }
+            catch (Exception ex)
+            {
+                Context.Trace.WriteException(ex);
+                Context.Trace.WriteLine($"OIDC token response: {json}");
                 throw;
             }
         }
@@ -336,7 +436,7 @@ namespace GitCredentialManager.Authentication
                     }
                 }
 
-                var viewModel = new DefaultAccountViewModel(Context.Environment)
+                var viewModel = new DefaultAccountViewModel(Context.SessionManager)
                 {
                     UserName = userName
                 };
@@ -367,7 +467,7 @@ namespace GitCredentialManager.Authentication
             }
         }
 
-        internal MicrosoftAuthenticationFlowType GetFlowType()
+        internal MicrosoftAuthenticationFlowType GetFlowType(Uri redirectUri)
         {
             if (Context.Settings.TryGetSetting(
                 Constants.EnvironmentVariables.MsAuthFlow,
@@ -379,7 +479,7 @@ namespace GitCredentialManager.Authentication
                 switch (valueStr.ToLowerInvariant())
                 {
                     case "auto":
-                        return MicrosoftAuthenticationFlowType.Auto;
+                        return Auto();
                     case "embedded":
                         return MicrosoftAuthenticationFlowType.EmbeddedWebView;
                     case "system":
@@ -393,7 +493,21 @@ namespace GitCredentialManager.Authentication
                 Context.Streams.Error.WriteLine($"warning: unknown Microsoft Authentication flow type '{valueStr}'; using 'auto'");
             }
 
-            return MicrosoftAuthenticationFlowType.Auto;
+            return Auto();
+
+            // Resolve the 'auto' flow type based on the redirect URI and platform capabilities
+            MicrosoftAuthenticationFlowType Auto()
+            {
+                // Prefer embedded webview
+                if (CanUseEmbeddedWebView())
+                    return MicrosoftAuthenticationFlowType.EmbeddedWebView;
+
+                if (CanUseSystemWebView(redirectUri))
+                    return MicrosoftAuthenticationFlowType.SystemWebView;
+
+                // Fall back to device code flow
+                return MicrosoftAuthenticationFlowType.DeviceCode;
+            }
         }
 
         /// <summary>
@@ -460,8 +574,20 @@ namespace GitCredentialManager.Authentication
 
             var appBuilder = PublicClientApplicationBuilder.Create(clientId)
                 .WithAuthority(authority)
-                .WithRedirectUri(redirectUri.ToString())
                 .WithHttpClientFactory(httpFactoryAdaptor);
+
+            // Use the default redirect URI if one is not provided
+            if (redirectUri is null)
+            {
+                // Uses "https://login.microsoftonline.com/common/oauth2/nativeclient" on .NET Framework
+                // but "http://localhost" on .NET Core. This is because there is no embedded webview support
+                // in .NET Core and thus the system webview is the only option.
+                appBuilder.WithDefaultRedirectUri();
+            }
+            else
+            {
+                appBuilder.WithRedirectUri(redirectUri.ToString());
+            }
 
             // Listen to MSAL logs if GCM_TRACE_MSAUTH is set
             if (Context.Settings.IsMsalTracingEnabled)
@@ -550,6 +676,24 @@ namespace GitCredentialManager.Authentication
             {
                 throw new InvalidOperationException("Service principal identity does not contain a certificate or client secret.");
             }
+
+            IConfidentialClientApplication app = appBuilder.Build();
+
+            await RegisterTokenCacheAsync(app.AppTokenCache, CreateAppTokenCacheProps, Context.Trace2);
+
+            return app;
+        }
+
+        private async Task<IConfidentialClientApplication> CreateConfidentialClientApplicationAsync(
+            MicrosoftWorkloadFederationOptions fedOpts)
+        {
+            var httpFactoryAdaptor = new MsalHttpClientFactoryAdaptor(Context.HttpClientFactory);
+
+            Context.Trace.WriteLine($"Creating federated confidential client application for {fedOpts.TenantId}/{fedOpts.ClientId}...");
+            var appBuilder = ConfidentialClientApplicationBuilder.Create(fedOpts.ClientId)
+                .WithTenantId(fedOpts.TenantId)
+                .WithHttpClientFactory(httpFactoryAdaptor)
+                .WithClientAssertion(reqOpts => GetClientAssertion(fedOpts, reqOpts));
 
             IConfidentialClientApplication app = appBuilder.Build();
 
@@ -754,10 +898,33 @@ namespace GitCredentialManager.Authentication
             };
         }
 
-        private static SystemWebViewOptions GetSystemWebViewOptions()
+        private SystemWebViewOptions GetSystemWebViewOptions()
         {
             // TODO: add nicer HTML success and error pages
-            return new SystemWebViewOptions();
+            return new SystemWebViewOptions
+            {
+                OpenBrowserAsync = OpenBrowserFunc
+            };
+
+            // We have special handling for Linux and WSL to open the system browser
+            // so we need to use our own function here. Sorry MSAL!
+            Task OpenBrowserFunc(Uri uri)
+            {
+                try
+                {
+                    Context.SessionManager.OpenBrowser(uri);
+                }
+                catch (Exception ex)
+                {
+                    Context.Trace.WriteLine("Failed to open system web browser - using MSAL fallback");
+                    Context.Trace.WriteException(ex);
+
+                    // Fallback to MSAL's default browser opening logic, preferring Edge.
+                    return SystemWebViewOptions.OpenWithChromeEdgeBrowserAsync(uri);
+                }
+
+                return Task.CompletedTask;
+            }
         }
 
         private Task ShowDeviceCodeInTty(DeviceCodeResult dcr)
@@ -857,24 +1024,24 @@ namespace GitCredentialManager.Authentication
 #endif
         }
 
-        private bool CanUseSystemWebView(IPublicClientApplication app, Uri redirectUri)
+        private bool CanUseSystemWebView(Uri redirectUri)
         {
+            //
             // MSAL requires the application redirect URI is a loopback address to use the System WebView
-            return Context.SessionManager.IsWebBrowserAvailable && app.IsSystemWebViewAvailable && redirectUri.IsLoopback;
+            //
+            // Note: we do NOT check the MSAL 'IsSystemWebViewAvailable' property as it only
+            // looks for the presence of the DISPLAY environment variable on UNIX systems.
+            // This is insufficient as we instead handle launching the default browser ourselves.
+            //
+            return Context.SessionManager.IsWebBrowserAvailable && redirectUri.IsLoopback;
         }
 
-        private void EnsureCanUseSystemWebView(IPublicClientApplication app, Uri redirectUri)
+        private void EnsureCanUseSystemWebView(Uri redirectUri)
         {
             if (!Context.SessionManager.IsWebBrowserAvailable)
             {
                 throw new Trace2InvalidOperationException(Context.Trace2,
                     "System web view is not available without a way to start a browser.");
-            }
-
-            if (!app.IsSystemWebViewAvailable)
-            {
-                throw new Trace2InvalidOperationException(Context.Trace2,
-                    "System web view is not available on this platform.");
             }
 
             if (!redirectUri.IsLoopback)

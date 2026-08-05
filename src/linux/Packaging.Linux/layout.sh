@@ -23,9 +23,16 @@ case "$i" in
     CONFIGURATION="${i#*=}"
     shift # past argument=value
     ;;
+    --output=*)
+    PAYLOAD="${i#*=}"
+    shift # past argument=value
+    ;;
     --runtime=*)
     RUNTIME="${i#*=}"
     shift # past argument=value
+    ;;
+    --symbol-output=*)
+    SYMBOLOUT="${i#*=}"
     ;;
     *)
           # unknown option
@@ -42,14 +49,16 @@ GCM_SRC="$SRC/shared/Git-Credential-Manager"
 PROJ_OUT="$OUT/linux/Packaging.Linux"
 
 # Build parameters
-FRAMEWORK=net8.0
+FRAMEWORK=net10.0
 
 # Perform pre-execution checks
 CONFIGURATION="${CONFIGURATION:=Debug}"
-
-# Outputs
-PAYLOAD="$PROJ_OUT/$CONFIGURATION/payload"
-SYMBOLOUT="$PROJ_OUT/$CONFIGURATION/payload.sym"
+if [ -z "$PAYLOAD" ]; then
+    die "--output was not set"
+fi
+if [ -z "$SYMBOLOUT" ]; then
+    SYMBOLOUT="$PAYLOAD.sym"
+fi
 
 # Cleanup payload directory
 if [ -d "$PAYLOAD" ]; then

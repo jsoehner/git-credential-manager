@@ -15,6 +15,7 @@ namespace GitCredentialManager
         public const string AuthorityIdAuto = "auto";
 
         public const string GcmDataDirectoryName = ".gcm";
+        public const string LinuxAppDefaultsDirectoryPath = "/etc/git-credential-manager/config.d";
 
         public const string MacOSBundleId = "git-credential-manager";
         public static readonly Guid DevBoxPartnerId = new("e3171dd9-9a5f-e5be-b36c-cc7c4f3f3bcf");
@@ -29,6 +30,15 @@ namespace GitCredentialManager
         /// and AAD tokens. Only required for MSA-Passthrough applications.
         /// </summary>
         public static readonly Guid MsaTransferTenantId = new("f8cdef31-a31e-4b4a-93e4-5f571e91255a");
+
+        public const string DefaultWorkloadFederationAudience = "api://AzureADTokenExchange";
+
+        public static class CredentialProtocol
+        {
+            public const string NtlmKey = "ntlm";
+            public const string NtlmSuppressed = "suppressed";
+            public const string NtlmAllow = "allow";
+        }
 
         public static class CredentialStoreNames
         {
@@ -119,9 +129,13 @@ namespace GitCredentialManager
             public const string OAuthDeviceEndpoint      = "GCM_OAUTH_DEVICE_ENDPOINT";
             public const string OAuthClientAuthHeader    = "GCM_OAUTH_USE_CLIENT_AUTH_HEADER";
             public const string OAuthDefaultUserName     = "GCM_OAUTH_DEFAULT_USERNAME";
+            public const string OAuthResponseMode        = "GCM_OAUTH_RESPONSE_MODE";
             public const string GcmDevUseLegacyUiHelpers = "GCM_DEV_USELEGACYUIHELPERS";
             public const string GcmGuiSoftwareRendering  = "GCM_GUI_SOFTWARE_RENDERING";
             public const string GcmAllowUnsafeRemotes    = "GCM_ALLOW_UNSAFE_REMOTES";
+
+            public const string GitHubActionsTokenRequestUrl = "ACTIONS_ID_TOKEN_REQUEST_URL";
+            public const string GitHubActionsTokenRequestToken = "ACTIONS_ID_TOKEN_REQUEST_TOKEN";
         }
 
         public static class Http
@@ -132,6 +146,10 @@ namespace GitCredentialManager
             public const string WwwAuthenticateNtlmScheme      = "NTLM";
 
             public const string MimeTypeJson = "application/json";
+            public const string MimeTypeFormUrlEncoded = "application/x-www-form-urlencoded";
+
+            public const string MethodGet = "GET";
+            public const string MethodPost = "POST";
         }
 
         public static class GitConfiguration
@@ -178,6 +196,7 @@ namespace GitCredentialManager
                 public const string OAuthDeviceEndpoint      = "oauthDeviceEndpoint";
                 public const string OAuthClientAuthHeader    = "oauthUseClientAuthHeader";
                 public const string OAuthDefaultUserName     = "oauthDefaultUserName";
+                public const string OAuthResponseMode        = "oauthResponseMode";
             }
 
             public static class Http
@@ -190,6 +209,7 @@ namespace GitCredentialManager
                 public const string SslCaInfo = "sslCAInfo";
                 public const string SslAutoClientCert = "sslAutoClientCert";
                 public const string CookieFile = "cookieFile";
+                public const string AllowNtlmAuth = "allowNTLMAuth";
             }
 
             public static class Remote
@@ -231,6 +251,7 @@ namespace GitCredentialManager
             public const string GcmDefaultAccount      = "https://aka.ms/gcm/defaultaccount";
             public const string GcmMultipleUsers       = "https://aka.ms/gcm/multipleusers";
             public const string GcmUnsafeRemotes       = "https://aka.ms/gcm/unsaferemotes";
+            public const string GcmNtlm                = "https://aka.ms/gcm/ntlm";
         }
 
         private static Version _gcmVersion;

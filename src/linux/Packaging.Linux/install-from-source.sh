@@ -40,18 +40,26 @@ if [ -z $is_ci ]; then
 
 Git Credential Manager is licensed under the MIT License: https://aka.ms/gcm/license"
 
-    while true; do
-        read -p "Do you want to continue? [Y/n] " yn
-        case $yn in
-            [Yy]*|"")
-                break
-            ;;
-            [Nn]*)
-                exit
-            ;;
-            *)
-                echo "Please answer yes or no."
-            ;;
+	while true; do
+        # Display prompt once before reading input
+        printf "Do you want to continue? [Y/n] "
+
+        # Prefer reading from the controlling terminal (TTY) when available,
+        # so that input works even if the script is piped (e.g. curl URL | sh)
+        if [ -r /dev/tty ]; then
+            read yn < /dev/tty
+        # If no TTY is available, attempt to read from standard input (stdin)
+        elif ! read yn; then
+            # If input is not possible via TTY or stdin, assume a non-interactive environment
+            # and abort with guidance for automated usage
+            echo "Interactive prompt unavailable in this environment. Use 'sh -s -- -y' for automated install."
+            exit 1
+        fi
+
+        case "$yn" in
+            [Yy]*|"") break ;;
+            [Nn]*) exit ;;
+            *) echo "Please answer yes or no." ;;
         esac
     done
 fi
@@ -83,7 +91,7 @@ ensure_dotnet_installed() {
     if [ -z "$(verify_existing_dotnet_installation)" ]; then
         curl -LO https://dot.net/v1/dotnet-install.sh
         chmod +x ./dotnet-install.sh
-        bash -c "./dotnet-install.sh --channel 8.0"
+        bash -c "./dotnet-install.sh --channel 10.0"
 
         # Since we have to run the dotnet install script with bash, dotnet isn't
         # added to the process PATH, so we manually add it here.
@@ -95,10 +103,10 @@ ensure_dotnet_installed() {
 
 verify_existing_dotnet_installation() {
     # Get initial pieces of installed sdk version(s).
-    sdks=$(dotnet --list-sdks | cut -c 1-3)
+    sdks=$(dotnet --list-sdks | cut -d' ' -f1 | cut -d. -f1,2)
 
     # If we have a supported version installed, return.
-    supported_dotnet_versions="8.0"
+    supported_dotnet_versions="10.0"
     for v in $supported_dotnet_versions; do
         if [ $(echo $sdks | grep "$v") ]; then
             echo $sdks
@@ -161,7 +169,7 @@ case "$distribution" in
         # Install dotnet packages and dependencies if needed.
         if [ -z "$(verify_existing_dotnet_installation)" ]; then
             # First try to use native feeds (Ubuntu 22.04 and later).
-            if ! apt_install dotnet8; then
+            if ! apt_install dotnet10; then
                 # If the native feeds fail, we fall back to
                 # packages.microsoft.com. We begin by adding the dotnet package
                 # repository/signing key.
@@ -177,11 +185,11 @@ case "$distribution" in
                 $sudo_cmd apt update
                 $sudo_cmd apt install apt-transport-https -y
                 $sudo_cmd apt update
-                $sudo_cmd apt install dotnet-sdk-8.0 dpkg-dev -y
+                $sudo_cmd apt install dotnet-sdk-10.0 dpkg-dev -y
             fi
         fi
     ;;
-    fedora | centos | rhel)
+    fedora | centos | rhel | ol)
         $sudo_cmd dnf upgrade -y
 
         # Install dotnet/GCM dependencies.
@@ -208,11 +216,11 @@ case "$distribution" in
         $sudo_cmd zypper -n update
 
         # Install dotnet/GCM dependencies.
-        install_packages zypper install "curl git find krb5 libicu libopenssl1_1"
+        install_packages zypper install "curl git find krb5 libicu"
 
         ensure_dotnet_installed
     ;;
-    arch)
+    arch | cachyos)
         print_unsupported_distro "WARNING" "$distribution"
 
         # --noconfirm required when running from container
@@ -223,7 +231,7 @@ case "$distribution" in
 
         ensure_dotnet_installed
     ;;
-    mariner)
+    mariner | azurelinux*)
         print_unsupported_distro "WARNING" "$distribution"
         $sudo_cmd tdnf update -y
 
