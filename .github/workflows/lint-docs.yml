@@ -13,6 +13,9 @@ on:
       - '**.md'
       - '.github/workflows/lint-docs.yml'
 
+permissions:
+  contents: read
+
 jobs:
   lint-markdown:
     name: Lint markdown files
